@@ -192,8 +192,8 @@ def pie(
     chart = Pie(init_opts=init_opts)
     df = normalize_data(data)
     if names is None or values is None:
-        # infer: object column + numeric column
-        obj_cols = df.select_dtypes(include="object").columns
+        # infer: object/category column + numeric column
+        obj_cols = df.select_dtypes(include=["object", "category"]).columns
         num_cols = df.select_dtypes(include="number").columns
         if len(obj_cols) >= 1 and len(num_cols) >= 1:
             names, values = obj_cols[0], num_cols[0]
@@ -228,7 +228,7 @@ def funnel(
     chart = Funnel(init_opts=init_opts)
     df = normalize_data(data)
     if names is None or values is None:
-        obj_cols = df.select_dtypes(include="object").columns
+        obj_cols = df.select_dtypes(include=["object", "category"]).columns
         num_cols = df.select_dtypes(include="number").columns
         if len(obj_cols) >= 1 and len(num_cols) >= 1:
             names, values = obj_cols[0], num_cols[0]
@@ -268,24 +268,32 @@ def boxplot(
         width, height, theme, title, xaxis_name, yaxis_name, None, None
     )
     chart = Boxplot(init_opts=init_opts)
+    ynum = pd.to_numeric(df[y], errors="coerce")
     if x is None:
         categories = ["data"]
-        groups = [(None, df)]
+        groups = [("data", ynum)]
     else:
-        categories = [str(c) for c in df[x].dropna().unique().tolist()]
-        groups = [(c, df[df[x] == c]) for c in categories]
+        # Keep original category order (first appearance), include NaN as its
+        # own category instead of silently dropping it.
+        cat_cols = df[x].astype("string")
+        order = list(dict.fromkeys(cat_cols.tolist()))
+        categories = [str(c) for c in order]
+        groups = [
+            (str(c), ynum[cat_cols == c] if pd.notna(c) else ynum[cat_cols.isna()])
+            for c in order
+        ]
 
     box_data: list[list[float]] = []
-    for _cat, g in groups:
-        vals = pd.to_numeric(g[y], errors="coerce").dropna()
+    for _cat, vals in groups:
+        vals = vals.dropna()
         if len(vals) == 0:
-            box_data.append([0, 0, 0, 0, 0])
+            box_data.append([0.0, 0.0, 0.0, 0.0, 0.0])
             continue
         q1, median, q3 = np.percentile(vals, [25, 50, 75])
         iqr = q3 - q1
-        lo = max(vals.min(), q1 - 1.5 * iqr)
-        hi = min(vals.max(), q3 + 1.5 * iqr)
-        box_data.append([float(lo), float(q1), float(median), float(q3), float(hi)])
+        lo = max(float(vals.min()), q1 - 1.5 * iqr)
+        hi = min(float(vals.max()), q3 + 1.5 * iqr)
+        box_data.append([lo, float(q1), float(median), float(q3), hi])
 
     chart.add_xaxis(categories)
     chart.add_yaxis("box", box_data)
@@ -318,7 +326,9 @@ def histogram(
     counts, edges = np.histogram(vals, bins=bins)
     if density:
         counts = (counts / counts.sum() / (edges[1] - edges[0])).round(6)
-    centers = [round(float((edges[i] + edges[i + 1]) / 2), 4) for i in range(bins)]
+    centers = [
+        round(float((edges[i] + edges[i + 1]) / 2), 4) for i in range(bins)
+    ]
 
     init_opts, common = _common_kwargs(
         width, height, theme, title, xaxis_name or x, yaxis_name or "count", None, None
@@ -365,7 +375,7 @@ def density_heatmap(
     value_list = [[i, j, int(counts[i, j])] for j in range(bins) for i in range(bins)]
     chart.add_yaxis("density", [str(c) for c in y_centers], value_list)
     chart.set_global_opts(
-        visualmap_opts=opts.VisualMapOpts(min_=0, max_=int(counts.max() or 1)),
+        visualmap_opts=opts.VisualMapOpts(min_=0, max_=int(round(counts.max())) or 1),
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
         xaxis_opts=opts.AxisOpts(name=xaxis_name or x),
         yaxis_opts=opts.AxisOpts(name=yaxis_name or y),
@@ -406,13 +416,19 @@ def radar(
 
     if series is not None:
         ensure_columns(df, series)
-        for name, group in df.groupby(series, sort=False):
-            vals = [[float(pd.to_numeric(group[ind], errors="coerce").mean() or 0) for ind in indicators]]
-            chart.add(str(name), vals)
+        grouped = df.groupby(series, sort=False)
+        for name, group in grouped:
+            vals = [
+                [float(pd.to_numeric(group[ind], errors="coerce").mean() or 0)]
+                for ind in indicators
+            ]
+            # pyecharts expects one row per series: [[v1, v2, ...]]
+            chart.add(str(name), [v[0] for v in vals])
     else:
-        for i, (_idx, row) in enumerate(df.iterrows()):
-            vals = [[float(pd.to_numeric(row[ind], errors="coerce") or 0) for ind in indicators]]
-            chart.add(f"row {i}", vals)
+        # One series per row, vectorized over rows.
+        data_mat = df[indicators].apply(pd.to_numeric, errors="coerce").fillna(0).to_numpy(dtype=float)
+        for i, row_vals in enumerate(data_mat):
+            chart.add(f"row {i}", [list(row_vals)])
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )

@@ -361,10 +361,12 @@ def scatter_geo(
     init_opts, _ = _common(title, width, height, theme)
     chart = Geo(init_opts=init_opts)
     chart.add_schema(maptype=maptype)
-    coords = [[str(r), float(row[lon]), float(row[lat])] for r, row in df.iterrows()]
-    for name, lo, la in coords:
-        chart.add_coordinate(name, lo, la)
-    pairs = [(str(r), 1) for r, _ in df.iterrows()]
+    names = [str(i) for i in range(len(df))]
+    lons = df[lon].to_numpy(dtype=float)
+    lats = df[lat].to_numpy(dtype=float)
+    for name, lo, la in zip(names, lons, lats):
+        chart.add_coordinate(name, float(lo), float(la))
+    pairs = [(name, 1) for name in names]
     chart.add("", pairs, type_="scatter")
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
@@ -390,9 +392,12 @@ def line_geo(
     init_opts, _ = _common(title, width, height, theme)
     chart = Geo(init_opts=init_opts)
     chart.add_schema(maptype=maptype)
-    for r, row in df.iterrows():
-        chart.add_coordinate(str(r), float(row[lon]), float(row[lat]))
-    pairs = [(str(r), 1) for r, _ in df.iterrows()]
+    names = [str(i) for i in range(len(df))]
+    lons = df[lon].to_numpy(dtype=float)
+    lats = df[lat].to_numpy(dtype=float)
+    for name, lo, la in zip(names, lons, lats):
+        chart.add_coordinate(name, float(lo), float(la))
+    pairs = [(name, 1) for name in names]
     chart.add("", pairs, type_="lines", linestyle_opts=opts.LineStyleOpts(width=2))
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
@@ -529,9 +534,12 @@ def sankey(
         ensure_columns(df, source, target, values)
         node_names = pd.unique(df[[source, target]].values.ravel())
         node_list = [{"name": str(n)} for n in node_names]
+        src = df[source].astype(str).to_numpy()
+        tgt = df[target].astype(str).to_numpy()
+        val = df[values].to_numpy(dtype=float)
         link_list = [
-            {"source": str(r[source]), "target": str(r[target]), "value": float(r[values])}
-            for _, r in df.iterrows()
+            {"source": s, "target": t, "value": float(v)}
+            for s, t, v in zip(src, tgt, val)
         ]
     else:
         node_list = nodes or []
@@ -595,9 +603,10 @@ def graph(
         ensure_columns(df, source, target)
         node_names = pd.unique(df[[source, target]].values.ravel())
         node_list = [{"name": str(n), "symbolSize": 10} for n in node_names]
+        src = df[source].astype(str).to_numpy()
+        tgt = df[target].astype(str).to_numpy()
         link_list = [
-            {"source": str(r[source]), "target": str(r[target])}
-            for _, r in df.iterrows()
+            {"source": s, "target": t} for s, t in zip(src, tgt)
         ]
         cats = None
     else:
@@ -628,9 +637,12 @@ def themeriver(
     init_opts, _ = _common(title, width, height, theme)
     chart = ThemeRiver(init_opts=init_opts)
     cats = df[category].astype(str).unique().tolist()
+    dates = df[date].astype(str).to_numpy()
+    values = df[value].to_numpy(dtype=float)
+    categories = df[category].astype(str).to_numpy()
     rows = [
-        [str(r[date]), float(r[value]), str(r[category])]
-        for _, r in df.iterrows()
+        [str(dt), float(v), str(c)]
+        for dt, v, c in zip(dates, values, categories)
     ]
     chart.add(cats, rows, singleaxis_opts=opts.SingleAxisOpts(type_="time"))
     chart.set_global_opts(
@@ -658,10 +670,9 @@ def calendar_heatmap(
     d = pd.to_datetime(df[date])
     if year is None:
         year = d.dt.year.mode().iloc[0]
-    pairs = [
-        [str(dt.date()), float(val)]
-        for dt, val in zip(d, df[value])
-    ]
+    dates = d.dt.date.astype(str).to_numpy()
+    values = df[value].to_numpy(dtype=float)
+    pairs = [[str(dt), float(v)] for dt, v in zip(dates, values)]
     chart.add(
         "",
         pairs,
