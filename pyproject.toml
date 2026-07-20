@@ -1,10 +1,10 @@
 [project]
 name = "pyecharts-express"
-version = "0.2.0"
-description = "Plotly-Express style API for pyecharts — build ECharts with concise, dataframe-friendly calls."
+version = "0.2.1"
+description = "A plotly-express style API for pyecharts — build ECharts with concise, dataframe-friendly calls."
 readme = "README.md"
 authors = [
-    { name = "tetsuji16", email = "tetsuji.kato@gmail.com" },
+    { name = "tetsuji16" },
 ]
 license = { text = "MIT" }
 keywords = ["pyecharts", "echarts", "plotly-express", "visualization", "charts"]
@@ -13,6 +13,17 @@ dependencies = [
     "pyecharts>=2.1.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 [project.urls]
