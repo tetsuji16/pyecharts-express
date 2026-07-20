@@ -32,6 +32,10 @@ def _common_kwargs(
     yaxis_name: str | None,
     xaxis_type: str | None,
     yaxis_type: str | None,
+    log_x: bool = False,
+    log_y: bool = False,
+    range_x: tuple[Any, Any] | None = None,
+    range_y: tuple[Any, Any] | None = None,
 ) -> tuple[opts.InitOpts, dict[str, Any]]:
     init_opts = build_init_opts(width, height, theme)
     common = dict(
@@ -40,6 +44,10 @@ def _common_kwargs(
         yaxis_name=yaxis_name,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
+        log_x=log_x,
+        log_y=log_y,
+        range_x=range_x,
+        range_y=range_y,
     )
     return init_opts, common
 
@@ -57,6 +65,14 @@ def bar(
     xaxis_name: str | None = None,
     yaxis_name: str | None = None,
     stack: bool = False,
+    orientation: str = "v",
+    log_y: bool = False,
+    range_y: tuple[Any, Any] | None = None,
+    range_x: tuple[Any, Any] | None = None,
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
+    color_discrete_map: Mapping[str, str] | None = None,
 ) -> Bar:
     """Create a bar chart.
 
@@ -72,6 +88,16 @@ def bar(
         series (then it is inferred).
     color:
         Column used to split bars into multiple series (grouped/stacked).
+    orientation:
+        ``"v"`` (vertical, default) or ``"h"`` (horizontal).
+    log_y / range_y / range_x:
+        Logarithmic axis and axis bounds (plotly ``log_y`` / ``range_*``).
+    labels:
+        Map of column name -> display name (plotly ``labels``).
+    opacity:
+        Bar opacity 0–1.
+    color_discrete_sequence / color_discrete_map:
+        Series color palette / fixed color mapping.
     """
     df = normalize_data(data)
     if y is None:
@@ -83,16 +109,57 @@ def bar(
             raise ValueError("`y` must be specified (multiple numeric columns found).")
     ensure_columns(df, y) if x is None else ensure_columns(df, x, y)
 
+    if labels:
+        xaxis_name = labels.get(x or "", xaxis_name)
+        yaxis_name = labels.get(y, yaxis_name)
+
+    # For horizontal bars, swap which axis is categorical vs value.
+    if orientation == "h":
+        xaxis_type, yaxis_type = "value", "category"
+    else:
+        xaxis_type, yaxis_type = "category", "value"
+
     init_opts, common = _common_kwargs(
-        width, height, theme, title, xaxis_name, yaxis_name, None, None
+        width, height, theme, title, xaxis_name, yaxis_name, xaxis_type, yaxis_type,
+        log_x=False, log_y=log_y, range_x=range_x, range_y=range_y,
     )
     chart = Bar(init_opts=init_opts)
-    series = split_by_color(df, x, y, color)
-    # x axis from the first series
+    chart.options["series"] = []  # reset; series added below
+    series = split_by_color(
+        df, x, y, color,
+        color_discrete_sequence=color_discrete_sequence,
+        color_discrete_map=color_discrete_map,
+        opacity=opacity,
+    )
     xs = series[0][1]
-    chart.add_xaxis(list(xs))
-    for name, _xs, ys in series:
-        chart.add_yaxis(name, list(ys), stack="total" if stack else None)
+    if orientation == "h":
+        chart.add_xaxis([str(v) for v in xs])
+        for name, _xs, ys, color_val in series:
+            itemstyle = opts.ItemStyleOpts()
+            if color_val:
+                itemstyle.opts["color"] = color_val
+            if opacity is not None:
+                itemstyle.opts["opacity"] = opacity
+            chart.add_yaxis(
+                name,
+                list(ys),
+                stack="total" if stack else None,
+                itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
+            )
+    else:
+        chart.add_xaxis([str(v) for v in xs])
+        for name, _xs, ys, color_val in series:
+            itemstyle = opts.ItemStyleOpts()
+            if color_val:
+                itemstyle.opts["color"] = color_val
+            if opacity is not None:
+                itemstyle.opts["opacity"] = opacity
+            chart.add_yaxis(
+                name,
+                list(ys),
+                stack="total" if stack else None,
+                itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
+            )
     apply_common(chart, **common)
     return chart
 
@@ -110,6 +177,14 @@ def line(
     xaxis_name: str | None = None,
     yaxis_name: str | None = None,
     smooth: bool = False,
+    log_x: bool = False,
+    log_y: bool = False,
+    range_x: tuple[Any, Any] | None = None,
+    range_y: tuple[Any, Any] | None = None,
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
+    color_discrete_map: Mapping[str, str] | None = None,
 ) -> Line:
     """Create a line chart."""
     df = normalize_data(data)
@@ -121,14 +196,36 @@ def line(
             raise ValueError("`y` must be specified (multiple numeric columns found).")
     ensure_columns(df, y) if x is None else ensure_columns(df, x, y)
 
+    if labels:
+        xaxis_name = labels.get(x or "", xaxis_name)
+        yaxis_name = labels.get(y, yaxis_name)
+
     init_opts, common = _common_kwargs(
-        width, height, theme, title, xaxis_name, yaxis_name, None, None
+        width, height, theme, title, xaxis_name, yaxis_name, None, None,
+        log_x=log_x, log_y=log_y, range_x=range_x, range_y=range_y,
     )
     chart = Line(init_opts=init_opts)
-    series = split_by_color(df, x, y, color)
+    series = split_by_color(
+        df, x, y, color,
+        color_discrete_sequence=color_discrete_sequence,
+        color_discrete_map=color_discrete_map,
+        opacity=opacity,
+    )
     chart.add_xaxis(list(series[0][1]))
-    for name, _xs, ys in series:
-        chart.add_yaxis(name, list(ys), is_smooth=smooth)
+    for name, _xs, ys, color_val in series:
+        itemstyle = opts.ItemStyleOpts()
+        if color_val:
+            itemstyle.opts["color"] = color_val
+        if opacity is not None:
+            itemstyle.opts["opacity"] = opacity
+        linestyle = opts.LineStyleOpts(color=color_val) if color_val else None
+        chart.add_yaxis(
+            name,
+            list(ys),
+            is_smooth=smooth,
+            linestyle_opts=linestyle,
+            itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
+        )
     apply_common(chart, **common)
     return chart
 
@@ -146,6 +243,16 @@ def scatter(
     xaxis_name: str | None = None,
     yaxis_name: str | None = None,
     size: str | None = None,
+    symbol: str | None = None,
+    symbol_sequence: Sequence[str] | None = None,
+    log_x: bool = False,
+    log_y: bool = False,
+    range_x: tuple[Any, Any] | None = None,
+    range_y: tuple[Any, Any] | None = None,
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
+    color_discrete_map: Mapping[str, str] | None = None,
 ) -> Scatter:
     """Create a scatter chart."""
     df = normalize_data(data)
@@ -157,14 +264,39 @@ def scatter(
             raise ValueError("`y` must be specified.")
     ensure_columns(df, y) if x is None else ensure_columns(df, x, y)
 
+    if labels:
+        xaxis_name = labels.get(x or "", xaxis_name)
+        yaxis_name = labels.get(y, yaxis_name)
+
     init_opts, common = _common_kwargs(
-        width, height, theme, title, xaxis_name, yaxis_name, None, None
+        width, height, theme, title, xaxis_name, yaxis_name, None, None,
+        log_x=log_x, log_y=log_y, range_x=range_x, range_y=range_y,
     )
     chart = Scatter(init_opts=init_opts)
-    series = split_by_color(df, x, y, color)
+    series = split_by_color(
+        df, x, y, color,
+        color_discrete_sequence=color_discrete_sequence,
+        color_discrete_map=color_discrete_map,
+        opacity=opacity,
+    )
     chart.add_xaxis(list(series[0][1]))
-    for name, _xs, ys in series:
-        chart.add_yaxis(name, list(ys))
+    sym_iter = iter(symbol_sequence or [])
+    for name, _xs, ys, color_val in series:
+        sym = symbol or next(sym_iter, None)
+        kw: dict[str, Any] = {}
+        if color_val or opacity is not None:
+            itemstyle = opts.ItemStyleOpts()
+            if color_val:
+                itemstyle.opts["color"] = color_val
+            if opacity is not None:
+                itemstyle.opts["opacity"] = opacity
+            kw["itemstyle_opts"] = itemstyle
+        if size is not None:
+            # pyecharts uses a single symbol size per series; use the mean.
+            kw["symbol_size"] = int(pd.to_numeric(df[size], errors="coerce").mean())
+        if sym:
+            kw["symbol"] = sym
+        chart.add_yaxis(name, list(ys), **kw)
     apply_common(chart, **common)
     return chart
 
@@ -180,6 +312,9 @@ def pie(
     theme: str | None = None,
     hole: bool = False,
     rose_type: str | None = None,
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
 ) -> Pie:
     """Create a pie chart.
 
@@ -187,7 +322,7 @@ def pie(
     ``dict`` mapping label -> value.
     """
     init_opts, _ = _common_kwargs(
-        width, height, theme, title, None, None, None, None
+        width, height, theme, title, None, None, None, None,
     )
     chart = Pie(init_opts=init_opts)
     df = normalize_data(data)
@@ -200,9 +335,30 @@ def pie(
         else:
             raise ValueError("`names` and `values` must be specified.")
     ensure_columns(df, names, values)
-    pairs = list(zip(df[names].astype(str).tolist(), df[values].tolist()))
+    label_map = labels or {}
+    raw_labels = [str(v) for v in df[names].tolist()]
+    vals = df[values].tolist()
+    palette = list(color_discrete_sequence or [])
+    pairs = []
+    for i, (lab, val) in enumerate(zip(raw_labels, vals)):
+        itemstyle = opts.ItemStyleOpts()
+        if palette:
+            itemstyle.opts["color"] = palette[i % len(palette)]
+        if opacity is not None:
+            itemstyle.opts["opacity"] = opacity
+        item = opts.PieItem(
+            name=label_map.get(lab, lab),
+            value=val,
+            itemstyle_opts=itemstyle if (palette or opacity is not None) else None,
+        )
+        pairs.append(item)
     radius = ["40%", "70%"] if hole else None
-    chart.add("", pairs, radius=radius, rosetype=rose_type)
+    chart.add(
+        "",
+        pairs,
+        radius=radius,
+        rosetype=rose_type,
+    )
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
         legend_opts=opts.LegendOpts(orient="vertical", pos_left="left"),
@@ -220,10 +376,13 @@ def funnel(
     height: str | None = None,
     theme: str | None = None,
     sort: str = "descending",
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
 ) -> Funnel:
     """Create a funnel chart."""
     init_opts, _ = _common_kwargs(
-        width, height, theme, title, None, None, None, None
+        width, height, theme, title, None, None, None, None,
     )
     chart = Funnel(init_opts=init_opts)
     df = normalize_data(data)
@@ -235,8 +394,28 @@ def funnel(
         else:
             raise ValueError("`names` and `values` must be specified.")
     ensure_columns(df, names, values)
-    pairs = list(zip(df[names].astype(str).tolist(), df[values].tolist()))
-    chart.add("", pairs, sort_=sort)
+    label_map = labels or {}
+    raw_labels = [str(v) for v in df[names].tolist()]
+    vals = df[values].tolist()
+    palette = list(color_discrete_sequence or [])
+    pairs = []
+    for i, (lab, val) in enumerate(zip(raw_labels, vals)):
+        itemstyle = opts.ItemStyleOpts()
+        if palette:
+            itemstyle.opts["color"] = palette[i % len(palette)]
+        if opacity is not None:
+            itemstyle.opts["opacity"] = opacity
+        item = opts.FunnelItem(
+            name=label_map.get(lab, lab),
+            value=val,
+            itemstyle_opts=itemstyle if (palette or opacity is not None) else None,
+        )
+        pairs.append(item)
+    chart.add(
+        "",
+        pairs,
+        sort_=sort,
+    )
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )
@@ -254,6 +433,10 @@ def boxplot(
     theme: str | None = None,
     xaxis_name: str | None = None,
     yaxis_name: str | None = None,
+    log_y: bool = False,
+    range_y: tuple[Any, Any] | None = None,
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
 ) -> Boxplot:
     """Create a box plot. Groups by ``x`` and computes quartiles of ``y``."""
     df = normalize_data(data)
@@ -264,8 +447,13 @@ def boxplot(
             raise ValueError("`y` must be specified.")
     ensure_columns(df, y) if x is None else ensure_columns(df, x, y)
 
+    if labels:
+        xaxis_name = labels.get(x or "", xaxis_name)
+        yaxis_name = labels.get(y, yaxis_name)
+
     init_opts, common = _common_kwargs(
-        width, height, theme, title, xaxis_name, yaxis_name, None, None
+        width, height, theme, title, xaxis_name, yaxis_name, None, None,
+        log_y=log_y, range_y=range_y,
     )
     chart = Boxplot(init_opts=init_opts)
     ynum = pd.to_numeric(df[y], errors="coerce")
@@ -296,7 +484,10 @@ def boxplot(
         box_data.append([lo, float(q1), float(median), float(q3), hi])
 
     chart.add_xaxis(categories)
-    chart.add_yaxis("box", box_data)
+    itemstyle = opts.ItemStyleOpts()
+    if opacity is not None:
+        itemstyle.opts["opacity"] = opacity
+    chart.add_yaxis("box", box_data, itemstyle_opts=itemstyle if opacity is not None else None)
     apply_common(chart, **common)
     return chart
 
@@ -313,6 +504,10 @@ def histogram(
     xaxis_name: str | None = None,
     yaxis_name: str | None = None,
     density: bool = False,
+    log_y: bool = False,
+    range_y: tuple[Any, Any] | None = None,
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
 ) -> Bar:
     """Create a histogram of a single numeric column."""
     df = normalize_data(data)
@@ -322,6 +517,11 @@ def histogram(
         if x is None:
             raise ValueError("`x` must be specified.")
     ensure_columns(df, x)
+
+    if labels:
+        xaxis_name = labels.get(x, xaxis_name)
+        yaxis_name = labels.get("count", yaxis_name)
+
     vals = pd.to_numeric(df[x], errors="coerce").dropna().to_numpy()
     counts, edges = np.histogram(vals, bins=bins)
     if density:
@@ -331,11 +531,16 @@ def histogram(
     ]
 
     init_opts, common = _common_kwargs(
-        width, height, theme, title, xaxis_name or x, yaxis_name or "count", None, None
+        width, height, theme, title, xaxis_name or x, yaxis_name or "count", None, None,
+        log_y=log_y, range_y=range_y,
     )
     chart = Bar(init_opts=init_opts)
+    itemstyle = opts.ItemStyleOpts()
+    if opacity is not None:
+        itemstyle.opts["opacity"] = opacity
     chart.add_xaxis([str(c) for c in centers])
-    chart.add_yaxis("count", counts.tolist())
+    chart.add_yaxis("count", counts.tolist(),
+                    itemstyle_opts=itemstyle if opacity is not None else None)
     apply_common(chart, **common)
     return chart
 
@@ -352,10 +557,16 @@ def density_heatmap(
     theme: str | None = None,
     xaxis_name: str | None = None,
     yaxis_name: str | None = None,
+    labels: Mapping[str, str] | None = None,
 ) -> HeatMap:
     """Create a 2D histogram heatmap of two numeric columns."""
     df = normalize_data(data)
     ensure_columns(df, x, y)
+
+    if labels:
+        xaxis_name = labels.get(x, xaxis_name)
+        yaxis_name = labels.get(y, yaxis_name)
+
     xv = pd.to_numeric(df[x], errors="coerce").to_numpy()
     yv = pd.to_numeric(df[y], errors="coerce").to_numpy()
     mask = ~(np.isnan(xv) | np.isnan(yv))
@@ -392,6 +603,9 @@ def radar(
     width: str | None = None,
     height: str | None = None,
     theme: str | None = None,
+    labels: Mapping[str, str] | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
+    color_discrete_map: Mapping[str, str] | None = None,
 ) -> Radar:
     """Create a radar chart.
 
@@ -404,31 +618,51 @@ def radar(
         indicators = list(df.select_dtypes(include="number").columns)
     if not indicators:
         raise ValueError("No numeric indicator columns found.")
+    # keep original column names for data access; labels only affect display
+    label_map = labels or {}
+    display_indicators = [label_map.get(ind, ind) for ind in indicators]
     ensure_columns(df, *indicators)
+
+    palette = list(color_discrete_sequence or [])
+
+    def resolve(name: str, idx: int) -> str | None:
+        if color_discrete_map and name in color_discrete_map:
+            return color_discrete_map[name]
+        if palette:
+            return palette[idx % len(palette)]
+        return None
 
     init_opts, _ = _common_kwargs(
         width, height, theme, title, None, None, None, None
     )
     chart = Radar(init_opts=init_opts)
     maxes = {ind: float(pd.to_numeric(df[ind], errors="coerce").max() or 1) for ind in indicators}
-    indicator_def = [opts.RadarIndicatorItem(name=ind, max_=maxes[ind] * 1.1) for ind in indicators]
+    indicator_def = [
+        opts.RadarIndicatorItem(name=display_indicators[i], max_=maxes[ind] * 1.1)
+        for i, ind in enumerate(indicators)
+    ]
     chart.add_schema(indicator_def)
 
     if series is not None:
         ensure_columns(df, series)
         grouped = df.groupby(series, sort=False)
-        for name, group in grouped:
+        for idx, (name, group) in enumerate(grouped):
             vals = [
                 [float(pd.to_numeric(group[ind], errors="coerce").mean() or 0)]
                 for ind in indicators
             ]
-            # pyecharts expects one row per series: [[v1, v2, ...]]
-            chart.add(str(name), [v[0] for v in vals])
+            color_val = resolve(str(name), idx)
+            chart.add(
+                str(name),
+                [v[0] for v in vals],
+                color=color_val,
+            )
     else:
         # One series per row, vectorized over rows.
         data_mat = df[indicators].apply(pd.to_numeric, errors="coerce").fillna(0).to_numpy(dtype=float)
         for i, row_vals in enumerate(data_mat):
-            chart.add(f"row {i}", [list(row_vals)])
+            color_val = resolve(f"row {i}", i)
+            chart.add(f"row {i}", [list(row_vals)], color=color_val)
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )

@@ -22,7 +22,8 @@ available afterwards.
 - 🎨 **pyecharts-compatible** — returns a raw `Chart`, freely customizable
 - 🧩 **covers the plotly-express chart surface** (unsupported ones raise a clear `NotImplementedError`)
 - 🪶 **lightweight** — a thin wrapper layer; the full power of pyecharts is reachable
-- 🧪 **tested** — `pytest` covers every chart type (54 tests)
+- 🎛️ **plotly-express compatible options** — `color_discrete_sequence` / `color_discrete_map`, `log_x` / `log_y`, `range_x` / `range_y`, `labels`, `opacity`, `orientation`, `symbol`
+- 🧪 **tested** — `pytest` covers every chart type and the new options (78 tests)
 
 ---
 
@@ -164,6 +165,35 @@ px.bar(
     width="800px",
     height="500px",
     theme="dark",
+)
+```
+
+---
+
+## Options (plotly-express compatible)
+
+Most chart functions accept these shared keyword arguments:
+
+| Option | Applies to | Description |
+|--------|-----------|-------------|
+| `color_discrete_sequence` | bar, line, scatter, area, pie, funnel, radar | Ordered list of CSS colors assigned to series in order |
+| `color_discrete_map` | bar, line, scatter, area, pie, funnel, radar | Dict mapping series name → fixed CSS color |
+| `log_x` / `log_y` | bar, line, scatter, area, histogram, boxplot | Use a logarithmic axis |
+| `range_x` / `range_y` | bar, line, scatter, area, histogram, boxplot | `(min, max)` axis bounds |
+| `labels` | all | Dict `{column: display_name}` renaming axis titles / categories / indicator names |
+| `opacity` | bar, line, scatter, area, pie, funnel, boxplot, histogram | Item opacity 0–1 |
+| `orientation` | bar | `"v"` (default) or `"h"` (horizontal) |
+| `symbol` / `symbol_sequence` | scatter | Marker shape (`"circle"`, `"rect"`, …) |
+
+Example:
+
+```python
+chart = px.bar(
+    df, x="city", y="pop", color="region",
+    color_discrete_sequence=["#1f77b4", "#ff7f0e"],
+    log_y=True,
+    labels={"pop": "Population (log)"},
+    opacity=0.8,
 )
 ```
 

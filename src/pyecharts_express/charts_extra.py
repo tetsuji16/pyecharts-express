@@ -7,7 +7,7 @@ density_contour, ternary) raise ``NotImplementedError`` with guidance.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -41,6 +41,7 @@ from .core import (
     normalize_data,
     split_by_color,
 )
+from .charts import _common_kwargs
 
 
 def _common(title, width, height, theme):
@@ -62,6 +63,14 @@ def area(
     stack: bool = False,
     xaxis_name: str | None = None,
     yaxis_name: str | None = None,
+    log_x: bool = False,
+    log_y: bool = False,
+    range_x: tuple[Any, Any] | None = None,
+    range_y: tuple[Any, Any] | None = None,
+    labels: Mapping[str, str] | None = None,
+    opacity: float | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
+    color_discrete_map: Mapping[str, str] | None = None,
 ) -> Line:
     """Stacked/filled area chart (plotly ``px.area``)."""
     df = normalize_data(data)
@@ -71,19 +80,38 @@ def area(
         if y is None:
             raise ValueError("`y` must be specified.")
     ensure_columns(df, y) if x is None else ensure_columns(df, x, y)
-    init_opts, common = _common(title, width, height, theme)
+
+    if labels:
+        xaxis_name = labels.get(x or "", xaxis_name)
+        yaxis_name = labels.get(y, yaxis_name)
+
+    init_opts, common = _common_kwargs(
+        width, height, theme, title, xaxis_name, yaxis_name, None, None,
+        log_x=log_x, log_y=log_y, range_x=range_x, range_y=range_y,
+    )
     chart = Line(init_opts=init_opts)
-    series = split_by_color(df, x, y, color)
+    series = split_by_color(
+        df, x, y, color,
+        color_discrete_sequence=color_discrete_sequence,
+        color_discrete_map=color_discrete_map,
+        opacity=opacity,
+    )
     chart.add_xaxis(list(series[0][1]))
-    for name, _xs, ys in series:
+    for name, _xs, ys, color_val in series:
+        itemstyle = opts.ItemStyleOpts()
+        if color_val:
+            itemstyle.opts["color"] = color_val
+        if opacity is not None:
+            itemstyle.opts["opacity"] = opacity
         chart.add_yaxis(
             name,
             list(ys),
             stack="total" if stack else None,
-            areastyle_opts=opts.AreaStyleOpts(opacity=0.5),
-            is_smooth=False,
+            areastyle_opts=opts.AreaStyleOpts(opacity=0.4),
+            itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
+            linestyle_opts=opts.LineStyleOpts(color=color_val) if color_val else None,
         )
-    apply_common(chart, title=title, xaxis_name=xaxis_name, yaxis_name=yaxis_name)
+    apply_common(chart, **common)
     return chart
 
 
@@ -160,17 +188,34 @@ def sunburst(
     width: str | None = None,
     height: str | None = None,
     theme: str | None = None,
+    labels: Mapping[str, str] | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
 ) -> Sunburst:
     """Sunburst chart (plotly ``px.sunburst``)."""
     df = normalize_data(data)
     init_opts, _ = _common(title, width, height, theme)
     chart = Sunburst(init_opts=init_opts)
     hierarchy = build_hierarchy(df, path, names, parents, values)
+    if labels:
+        hierarchy = _apply_labels(hierarchy, labels)
     chart.add("", hierarchy)
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )
     return chart
+
+
+def _apply_labels(hierarchy: list[dict], labels: Mapping[str, str]) -> list[dict]:
+    """Recursively rename node ``name`` fields using a column->label map."""
+    out = []
+    for node in hierarchy:
+        new_node = dict(node)
+        if new_node.get("name") in labels:
+            new_node["name"] = labels[new_node["name"]]
+        if "children" in new_node:
+            new_node["children"] = _apply_labels(new_node["children"], labels)
+        out.append(new_node)
+    return out
 
 
 def treemap(
@@ -184,12 +229,16 @@ def treemap(
     width: str | None = None,
     height: str | None = None,
     theme: str | None = None,
+    labels: Mapping[str, str] | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
 ) -> TreeMap:
     """Treemap chart (plotly ``px.treemap``)."""
     df = normalize_data(data)
     init_opts, _ = _common(title, width, height, theme)
     chart = TreeMap(init_opts=init_opts)
     hierarchy = build_hierarchy(df, path, names, parents, values)
+    if labels:
+        hierarchy = _apply_labels(hierarchy, labels)
     chart.add("", hierarchy)
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
@@ -208,13 +257,23 @@ def icicle(
     width: str | None = None,
     height: str | None = None,
     theme: str | None = None,
+    labels: Mapping[str, str] | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
 ) -> Tree:
     """Icicle chart (plotly ``px.icicle``) via pyecharts Tree."""
     df = normalize_data(data)
     init_opts, _ = _common(title, width, height, theme)
     chart = Tree(init_opts=init_opts)
     hierarchy = build_hierarchy(df, path, names, parents, values)
-    chart.add("", hierarchy, layout="orthogonal", orient="LR", symbol="rect")
+    if labels:
+        hierarchy = _apply_labels(hierarchy, labels)
+    chart.add(
+        "",
+        hierarchy,
+        layout="orthogonal",
+        orient="LR",
+        symbol="rect",
+    )
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )
@@ -243,8 +302,9 @@ def bar_polar(
         radiusaxis_opts=opts.RadiusAxisOpts(),
     )
     series = split_by_color(df, None, r, color)
-    for name, _xs, ys in series:
-        chart.add(name, list(ys), type_="bar", stack="t" if stack else None)
+    for name, _xs, ys, color_val in series:
+        chart.add(name, list(ys), type_="bar", stack="t" if stack else None,
+                  itemstyle_opts=opts.ItemStyleOpts(color=color_val) if color_val else None)
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )
@@ -272,8 +332,9 @@ def line_polar(
         radiusaxis_opts=opts.RadiusAxisOpts(),
     )
     series = split_by_color(df, None, r, color)
-    for name, _xs, ys in series:
-        chart.add(name, list(ys), type_="line")
+    for name, _xs, ys, color_val in series:
+        chart.add(name, list(ys), type_="line",
+                  itemstyle_opts=opts.ItemStyleOpts(color=color_val) if color_val else None)
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )
@@ -301,8 +362,9 @@ def scatter_polar(
         radiusaxis_opts=opts.RadiusAxisOpts(),
     )
     series = split_by_color(df, None, r, color)
-    for name, _xs, ys in series:
-        chart.add(name, list(ys), type_="scatter")
+    for name, _xs, ys, color_val in series:
+        chart.add(name, list(ys), type_="scatter",
+                  itemstyle_opts=opts.ItemStyleOpts(color=color_val) if color_val else None)
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )

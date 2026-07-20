@@ -30,8 +30,8 @@ def test_generator_input_not_consumed():
 
     chart = px.bar(gen(), x="x", y="y")
     _render(chart)
-    # x axis should have both points (numeric preserved as-is by pyecharts)
-    assert chart.options["xAxis"][0]["data"] == [1, 2]
+    # x axis should have both points (categorical axis stringifies values)
+    assert chart.options["xAxis"][0]["data"] == ["1", "2"]
 
 
 def test_empty_dataframe():

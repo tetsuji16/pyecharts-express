@@ -47,16 +47,17 @@ def test_split_by_color_none_returns_single_series():
     df = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
     series = split_by_color(df, "x", "y", None)
     assert len(series) == 1
-    name, xs, ys = series[0]
+    name, xs, ys, color_val = series[0]
     assert name == "y"
     assert xs == [1, 2]
     assert ys == [3, 4]
+    assert color_val is None
 
 
 def test_split_by_color_no_x_uses_index():
     df = pd.DataFrame({"y": [3, 4, 5]})
     series = split_by_color(df, None, "y", None)
-    _name, xs, ys = series[0]
+    _name, xs, ys, _color = series[0]
     assert xs == [0, 1, 2]
     assert ys == [3, 4, 5]
 
@@ -67,5 +68,5 @@ def test_split_by_color_groups():
     )
     series = split_by_color(df, "x", "y", "g")
     assert len(series) == 2
-    names = {n for n, _, _ in series}
+    names = {n for n, _, _, _ in series}
     assert names == {"p", "q"}

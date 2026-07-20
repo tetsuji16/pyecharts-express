@@ -54,26 +54,48 @@ def ensure_columns(df: pd.DataFrame, *names: str) -> None:
 
 
 def split_by_color(
-    df: pd.DataFrame, x: str | None, y: str, color: str | None
-) -> list[tuple[str, Sequence[Any], Sequence[Any]]]:
-    """Return ``(series_name, x_vals, y_vals)`` tuples.
+    df: pd.DataFrame,
+    x: str | None,
+    y: str,
+    color: str | None,
+    *,
+    color_discrete_sequence: Sequence[str] | None = None,
+    color_discrete_map: Mapping[str, str] | None = None,
+    opacity: float | None = None,
+) -> list[tuple[str, Sequence[Any], Sequence[Any], str | None]]:
+    """Return ``(series_name, x_vals, y_vals, color_value)`` tuples.
 
     When ``color`` is given the data is grouped by that column and one series
     is produced per group. Otherwise a single series named ``y`` is returned.
     Rows with a missing ``color`` value are dropped (they can't belong to a
     named series).
+
+    ``color_discrete_sequence`` assigns palette colors in series order;
+    ``color_discrete_map`` pins specific series names to specific colors.
+    The returned ``color_value`` is the resolved CSS color (or ``None`` to let
+    pyecharts use its default palette). ``opacity`` (0–1) is returned alongside
+    via the caller, which merges it into each series' ``itemStyle``.
     """
+    palette = list(color_discrete_sequence or [])
+
+    def resolve(name: str, idx: int) -> str | None:
+        if color_discrete_map and name in color_discrete_map:
+            return color_discrete_map[name]
+        if palette:
+            return palette[idx % len(palette)]
+        return None
+
     if color is None:
         xs = df[x].tolist() if x is not None else list(range(len(df)))
         ys = df[y].tolist()
-        return [(str(y), xs, ys)]
+        return [(str(y), xs, ys, None)]
 
-    out: list[tuple[str, Sequence[Any], Sequence[Any]]] = []
+    out: list[tuple[str, Sequence[Any], Sequence[Any], str | None]] = []
     sub = df[df[color].notna()]
-    for name, group in sub.groupby(color, sort=False):
+    for idx, (name, group) in enumerate(sub.groupby(color, sort=False)):
         xs = group[x].tolist() if x is not None else list(range(len(group)))
         ys = group[y].tolist()
-        out.append((str(name), xs, ys))
+        out.append((str(name), xs, ys, resolve(str(name), idx)))
     return out
 
 
@@ -101,22 +123,42 @@ def apply_common(
     yaxis_name: str | None = None,
     xaxis_type: str | None = None,
     yaxis_type: str | None = None,
+    log_x: bool = False,
+    log_y: bool = False,
+    range_x: tuple[Any, Any] | None = None,
+    range_y: tuple[Any, Any] | None = None,
+    opacity: float | None = None,
 ) -> Chart:
-    """Apply title / axis titles / axis types to a chart."""
+    """Apply title / axis titles / axis types / scales / ranges to a chart.
+
+    Parameters
+    ----------
+    log_x, log_y:
+        Use a logarithmic axis (equivalent to plotly ``log_x`` / ``log_y``).
+    range_x, range_y:
+        ``(min, max)`` axis bounds (plotly ``range_x`` / ``range_y``).
+    opacity:
+        Item opacity 0–1 (plotly ``opacity``).
+    """
     title_opts = opts.TitleOpts(title=title) if title else opts.TitleOpts()
     xaxis_opts = opts.AxisOpts(
         name=xaxis_name or "",
-        type_=xaxis_type,
+        type_="log" if log_x else xaxis_type,
+        min_=range_x[0] if range_x else None,
+        max_=range_x[1] if range_x else None,
     )
     yaxis_opts = opts.AxisOpts(
         name=yaxis_name or "",
-        type_=yaxis_type,
+        type_="log" if log_y else yaxis_type,
+        min_=range_y[0] if range_y else None,
+        max_=range_y[1] if range_y else None,
     )
-    chart.set_global_opts(
+    kwargs: dict[str, Any] = dict(
         title_opts=title_opts,
         xaxis_opts=xaxis_opts,
         yaxis_opts=yaxis_opts,
     )
+    chart.set_global_opts(**kwargs)
     return chart
 
 
