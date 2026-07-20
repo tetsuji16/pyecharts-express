@@ -108,3 +108,89 @@ def apply_common(
         yaxis_opts=yaxis_opts,
     )
     return chart
+
+
+def build_hierarchy(
+    df: pd.DataFrame,
+    path: list[str] | None,
+    names: str | None,
+    parents: str | None,
+    values: str | None,
+) -> list[dict]:
+    """Build a nested dict/list structure for sunburst / treemap / tree.
+
+    Two input modes are supported:
+
+    1. ``path`` — ordered list of columns describing the hierarchy level by
+       level (e.g. ``["region", "country", "city"]``). Leaf value comes from
+       ``values`` (or 1 if ``None``).
+    2. ``names`` / ``parents`` — explicit node + parent columns (plotly
+       ``px.sunburst(names=, parents=)`` style). ``values`` gives leaf size.
+    """
+    if path:
+        ensure_columns(df, *path)
+        if values is not None:
+            ensure_columns(df, values)
+
+        # group rows into nested dict keyed by tuple path
+        root: dict = {}
+        for _, row in df.iterrows():
+            key = tuple(str(row[p]) for p in path)
+            val = float(row[values]) if values is not None else 1.0
+            node = root
+            for i, level in enumerate(key):
+                if level not in node:
+                    node[level] = {} if i < len(key) - 1 else val
+                if i == len(key) - 1:
+                    # accumulate leaf value
+                    if isinstance(node[level], dict):
+                        node[level] = val
+                    else:
+                        node[level] = node[level] + val
+                node = node[level] if isinstance(node[level], dict) else root
+
+        def to_list(d: dict) -> list[dict]:
+            out = []
+            for name, sub in d.items():
+                if isinstance(sub, dict):
+                    out.append({"name": name, "children": to_list(sub)})
+                else:
+                    out.append({"name": name, "value": sub})
+            return out
+
+        return to_list(root)
+
+    if names is not None and parents is not None:
+        ensure_columns(df, names, parents)
+        if values is not None:
+            ensure_columns(df, values)
+        nodes = {}
+        for _, row in df.iterrows():
+            n = str(row[names])
+            p = str(row[parents]) if pd.notna(row[parents]) and row[parents] != "" else None
+            v = float(row[values]) if values is not None else 1.0
+            nodes[n] = {"name": n, "value": v, "parent": p}
+        # build tree
+        children: dict = {}
+        roots = []
+        for n, info in nodes.items():
+            p = info["parent"]
+            if p is None or p not in nodes:
+                roots.append(info)
+            else:
+                children.setdefault(p, []).append(info)
+        # attach children recursively
+        def attach(info):
+            kids = children.get(info["name"], [])
+            if kids:
+                info["children"] = [attach(k) for k in kids]
+            else:
+                # leaf keeps value
+                pass
+            return info
+
+        result = [attach(r) for r in roots]
+        # if single root with children, flatten one level like plotly
+        return result
+
+    raise ValueError("Either `path` or both `names` and `parents` must be given.")

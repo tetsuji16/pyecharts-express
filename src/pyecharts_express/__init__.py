@@ -5,7 +5,6 @@ Build ECharts visualizations with concise, dataframe-friendly calls.
 Example
 -------
 >>> import pyecharts_express as px
->>> from pyecharts.render import make_snapshot
 >>> chart = px.bar(df, x="city", y="population", color="region", title="Populations")
 >>> chart.render("chart.html")
 """
@@ -24,9 +23,37 @@ from .charts import (
     radar,
     scatter,
 )
+from .charts_extra import (
+    area,
+    bar_polar,
+    box,
+    calendar_heatmap,
+    choropleth,
+    density_contour,
+    funnel_area,
+    graph,
+    gauge,
+    icicle,
+    line_geo,
+    line_polar,
+    map_choropleth,
+    parallel_categories,
+    parallel_coordinates,
+    sankey,
+    scatter_geo,
+    scatter_matrix,
+    scatter_polar,
+    strip,
+    sunburst,
+    themeriver,
+    treemap,
+    violin,
+    wordcloud,
+)
 
 __all__ = [
     "__version__",
+    # core set
     "bar",
     "line",
     "scatter",
@@ -36,4 +63,30 @@ __all__ = [
     "histogram",
     "density_heatmap",
     "radar",
+    # extended (plotly-express coverage)
+    "area",
+    "funnel_area",
+    "box",
+    "violin",
+    "strip",
+    "density_contour",
+    "sunburst",
+    "treemap",
+    "icicle",
+    "bar_polar",
+    "line_polar",
+    "scatter_polar",
+    "map_choropleth",
+    "choropleth",
+    "scatter_geo",
+    "line_geo",
+    "parallel_coordinates",
+    "parallel_categories",
+    "scatter_matrix",
+    "sankey",
+    "gauge",
+    "graph",
+    "themeriver",
+    "calendar_heatmap",
+    "wordcloud",
 ]
