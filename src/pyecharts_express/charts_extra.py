@@ -392,12 +392,15 @@ def map_choropleth(
     init_opts, _ = _common(title, width, height, theme)
     chart = Map(init_opts=init_opts)
     pairs = list(zip(df[names].astype(str).tolist(), df[values].tolist()))
+    vmin = float(df[values].min())
+    vmax = float(df[values].max())
+    if vmax == vmin:
+        # Degenerate visualMap (all values equal) breaks ECharts rendering.
+        vmax = vmin + 1.0
     chart.add("", pairs, maptype=maptype)
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
-        visualmap_opts=opts.VisualMapOpts(
-            min_=float(df[values].min()), max_=float(df[values].max())
-        ),
+        visualmap_opts=opts.VisualMapOpts(min_=vmin, max_=vmax),
     )
     return chart
 
@@ -735,6 +738,10 @@ def calendar_heatmap(
     dates = d.dt.date.astype(str).to_numpy()
     values = df[value].to_numpy(dtype=float)
     pairs = [[str(dt), float(v)] for dt, v in zip(dates, values)]
+    vmin = float(df[value].min())
+    vmax = float(df[value].max())
+    if vmax == vmin:
+        vmax = vmin + 1.0
     chart.add(
         "",
         pairs,
@@ -743,7 +750,7 @@ def calendar_heatmap(
     chart.set_global_opts(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
         visualmap_opts=opts.VisualMapOpts(
-            min_=float(df[value].min()), max_=float(df[value].max()),
+            min_=vmin, max_=vmax,
             orient="horizontal", pos_bottom="5%",
         ),
     )

@@ -162,6 +162,38 @@ def apply_common(
     return chart
 
 
+def reindex_series_for_axis(
+    series: list[tuple[str, Sequence[Any], Sequence[Any], str | None]],
+) -> tuple[list[Any], list[tuple[str, list[Any | None], str | None]]]:
+    """Align color-split series onto a shared categorical axis.
+
+    When ``color`` groups rows by a categorical ``x`` column, different groups
+    may contain *different* categories. pyecharts aligns every series to the
+    single ``xAxis`` it is given, so we must build the union of all categories
+    (first-appearance order) and pad each series' y-values with ``None`` for
+    categories it does not contain. Without this, bars/lines for categories
+    missing from the first group silently fail to render.
+
+    Returns ``(axis_order, aligned_series)`` where each aligned entry is
+    ``(name, padded_ys, color_value)``.
+    """
+    order: list[Any] = []
+    seen: set[Any] = set()
+    for _name, xs, _ys, _c in series:
+        for v in xs:
+            if v not in seen:
+                seen.add(v)
+                order.append(v)
+    index = {v: i for i, v in enumerate(order)}
+    aligned: list[tuple[str, list[Any | None], str | None]] = []
+    for name, xs, ys, color_val in series:
+        padded = [None] * len(order)
+        for x, y in zip(xs, ys):
+            padded[index[x]] = y
+        aligned.append((name, padded, color_val))
+    return order, aligned
+
+
 def build_hierarchy(
     df: pd.DataFrame,
     path: list[str] | None,
@@ -183,29 +215,26 @@ def build_hierarchy(
         ensure_columns(df, *path)
         if values is not None:
             ensure_columns(df, values)
+            # Vectorized aggregation: correctly accumulates duplicate leaf
+            # paths (e.g. two rows with the same full path sum their values)
+            # and avoids the O(rows) Python iterrows loop.
+            agg = df.groupby(list(path), sort=False)[values].sum()
+        else:
+            agg = df.groupby(list(path), sort=False).size().astype(float)
 
-        # group rows into nested dict keyed by tuple path
         root: dict = {}
-        for _, row in df.iterrows():
-            key = tuple(str(row[p]) for p in path)
-            val = float(row[values]) if values is not None else 1.0
+        for raw_key, val in zip(agg.index, agg.values):
+            key = tuple(str(k) for k in (raw_key if isinstance(raw_key, tuple) else (raw_key,)))
             node = root
             for i, level in enumerate(key):
-                child = node.get(level)
                 if i < len(key) - 1:
+                    child = node.get(level)
                     if not isinstance(child, dict):
                         child = {}
                         node[level] = child
                     node = child
                 else:
-                    # leaf level: accumulate value
-                    if isinstance(child, dict):
-                        # duplicate leaf path; start accumulation fresh
-                        node[level] = val
-                    elif isinstance(child, (int, float)):
-                        node[level] = child + val
-                    else:
-                        node[level] = val
+                    node[level] = float(val)
 
         def to_list(d: dict) -> list[dict]:
             out = []

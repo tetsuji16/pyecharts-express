@@ -19,6 +19,7 @@ from .core import (
     build_init_opts,
     ensure_columns,
     normalize_data,
+    reindex_series_for_axis,
     split_by_color,
 )
 
@@ -113,53 +114,58 @@ def bar(
         xaxis_name = labels.get(x or "", xaxis_name)
         yaxis_name = labels.get(y, yaxis_name)
 
-    # For horizontal bars, swap which axis is categorical vs value.
+    # For horizontal bars pyecharts' reversal_axis() swaps the *data* between
+    # axes but keeps the AxisOpts objects in place. Therefore we must NOT pin
+    # explicit "category"/"value" types (they would mismatch the swapped data)
+    # and we must route log/range/axis-names to the physical axis that ends up
+    # carrying the value (x) or category (y) after the reversal.
     if orientation == "h":
-        xaxis_type, yaxis_type = "value", "category"
+        axis_name_x, axis_name_y = yaxis_name, xaxis_name
+        axis_type_x, axis_type_y = "value", "category"
+        common_log_x, common_log_y = log_y, False
+        common_range_x, common_range_y = range_y, range_x
     else:
-        xaxis_type, yaxis_type = "category", "value"
+        axis_name_x, axis_name_y = xaxis_name, yaxis_name
+        axis_type_x, axis_type_y = "category", "value"
+        common_log_x, common_log_y = False, log_y
+        common_range_x, common_range_y = range_x, range_y
 
     init_opts, common = _common_kwargs(
-        width, height, theme, title, xaxis_name, yaxis_name, xaxis_type, yaxis_type,
-        log_x=False, log_y=log_y, range_x=range_x, range_y=range_y,
+        width, height, theme, title, axis_name_x, axis_name_y,
+        axis_type_x, axis_type_y,
+        log_x=common_log_x, log_y=common_log_y,
+        range_x=common_range_x, range_y=common_range_y,
     )
     chart = Bar(init_opts=init_opts)
-    chart.options["series"] = []  # reset; series added below
     series = split_by_color(
         df, x, y, color,
         color_discrete_sequence=color_discrete_sequence,
         color_discrete_map=color_discrete_map,
         opacity=opacity,
     )
-    xs = series[0][1]
-    if orientation == "h":
-        chart.add_xaxis([str(v) for v in xs])
-        for name, _xs, ys, color_val in series:
-            itemstyle = opts.ItemStyleOpts()
-            if color_val:
-                itemstyle.opts["color"] = color_val
-            if opacity is not None:
-                itemstyle.opts["opacity"] = opacity
-            chart.add_yaxis(
-                name,
-                list(ys),
-                stack="total" if stack else None,
-                itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
-            )
+    # When color splits a categorical x into groups with *different* categories,
+    # align every series onto the union of categories so none get dropped.
+    if color is not None and x is not None:
+        use_xs, aligned = reindex_series_for_axis(series)
+        series_iter = [(name, ys, color_val) for name, ys, color_val in aligned]
     else:
-        chart.add_xaxis([str(v) for v in xs])
-        for name, _xs, ys, color_val in series:
-            itemstyle = opts.ItemStyleOpts()
-            if color_val:
-                itemstyle.opts["color"] = color_val
-            if opacity is not None:
-                itemstyle.opts["opacity"] = opacity
-            chart.add_yaxis(
-                name,
-                list(ys),
-                stack="total" if stack else None,
-                itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
-            )
+        use_xs = series[0][1]
+        series_iter = [(name, ys, color_val) for name, _xs, ys, color_val in series]
+    chart.add_xaxis([str(v) for v in use_xs])
+    for name, ys, color_val in series_iter:
+        itemstyle = opts.ItemStyleOpts()
+        if color_val:
+            itemstyle.opts["color"] = color_val
+        if opacity is not None:
+            itemstyle.opts["opacity"] = opacity
+        chart.add_yaxis(
+            name,
+            [None if v is None else v for v in ys],
+            stack="total" if stack else None,
+            itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
+        )
+    if orientation == "h":
+        chart.reversal_axis()
     apply_common(chart, **common)
     return chart
 
@@ -211,8 +217,14 @@ def line(
         color_discrete_map=color_discrete_map,
         opacity=opacity,
     )
-    chart.add_xaxis(list(series[0][1]))
-    for name, _xs, ys, color_val in series:
+    if color is not None and x is not None:
+        use_xs, aligned = reindex_series_for_axis(series)
+        series_iter = [(name, ys, color_val) for name, ys, color_val in aligned]
+    else:
+        use_xs = series[0][1]
+        series_iter = [(name, ys, color_val) for name, _xs, ys, color_val in series]
+    chart.add_xaxis(list(use_xs))
+    for name, ys, color_val in series_iter:
         itemstyle = opts.ItemStyleOpts()
         if color_val:
             itemstyle.opts["color"] = color_val
@@ -221,7 +233,7 @@ def line(
         linestyle = opts.LineStyleOpts(color=color_val) if color_val else None
         chart.add_yaxis(
             name,
-            list(ys),
+            [None if v is None else v for v in ys],
             is_smooth=smooth,
             linestyle_opts=linestyle,
             itemstyle_opts=itemstyle if (color_val or opacity is not None) else None,
