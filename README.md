@@ -23,7 +23,7 @@ available afterwards.
 - 🧩 **covers the plotly-express chart surface** (unsupported ones raise a clear `NotImplementedError`)
 - 🪶 **lightweight** — a thin wrapper layer; the full power of pyecharts is reachable
 - 🎛️ **plotly-express compatible options** — `color_discrete_sequence` / `color_discrete_map`, `log_x` / `log_y`, `range_x` / `range_y`, `labels`, `opacity`, `orientation`, `symbol`
-- 🧪 **tested** — `pytest` covers every chart type and the new options (78 tests)
+- 🧪 **tested** — `pytest` covers every chart type and the new options (84 tests)
 
 ---
 
@@ -109,6 +109,10 @@ no pyecharts equivalent raise `NotImplementedError` with guidance.
 | `px.scatter_matrix` | Scatter plot matrix (SPLOM) | `dimensions`, `color` |
 | `px.parallel_coordinates` | Parallel coordinates | `dimensions`, `color` |
 | `px.parallel_categories` | Parallel categories | `dimensions`, `color` |
+| `px.scatter_3d` | 3D scatter (ECharts GL) | `x`, `y`, `z`, `color` |
+| `px.line_3d` | 3D line (ECharts GL) | `x`, `y`, `z`, `color` |
+| `px.bar_3d` | 3D bar (ECharts GL) | `x`, `y`, `z`, `color` |
+| `px.scatter_ternary` | ❌ unsupported (no ECharts equivalent) | — |
 
 ### Misc
 | Function | Description | Key args |

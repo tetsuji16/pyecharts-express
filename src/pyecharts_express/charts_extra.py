@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-import numpy as np
 import pandas as pd
 from pyecharts import options as opts
 from pyecharts.charts import (
+    Bar3D,
+    Boxplot,
     Calendar,
     Funnel,
     Gauge,
@@ -20,18 +21,19 @@ from pyecharts.charts import (
     Graph,
     Grid,
     Line,
+    Line3D,
     Map,
     Parallel,
     Polar,
     Sankey,
     Scatter,
+    Scatter3D,
     Sunburst,
     ThemeRiver,
     Tree,
     TreeMap,
     WordCloud,
 )
-from pyecharts.charts.chart import Chart
 
 from .core import (
     apply_common,
@@ -782,3 +784,154 @@ def wordcloud(
         title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts()
     )
     return chart
+
+
+def _validate_3d_columns(
+    df: pd.DataFrame, x: str, y: str, z: str, color: str | None
+) -> None:
+    ensure_columns(df, x, y, z)
+    if color is not None:
+        ensure_columns(df, color)
+
+
+def _visualmap_bounds(values: pd.Series) -> tuple[float, float]:
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        raise ValueError("`z` must contain at least one numeric value.")
+    minimum = float(numeric.min())
+    maximum = float(numeric.max())
+    if minimum == maximum:
+        maximum = minimum + 1.0
+    return minimum, maximum
+
+
+def scatter_3d(
+    data: Any,
+    x: str,
+    y: str,
+    z: str,
+    color: str | None = None,
+    *,
+    title: str | None = None,
+    width: str | None = None,
+    height: str | None = None,
+    theme: str | None = None,
+) -> Scatter3D:
+    """3D scatter plot (plotly ``px.scatter_3d``).
+
+    Uses ECharts GL (pyecharts Scatter3D) with a Cartesian3D coordinate system.
+    """
+    df = normalize_data(data)
+    _validate_3d_columns(df, x, y, z, color)
+    init_opts, _ = _common(title, width, height, theme)
+    chart = Scatter3D(init_opts=init_opts)
+
+    if color is not None:
+        for name, group in df.groupby(color, sort=False):
+            chart.add(
+                str(name),
+                group[[x, y, z]].values.tolist(),
+                itemstyle_opts=opts.ItemStyleOpts(opacity=0.8),
+            )
+    else:
+        chart.add(
+            "",
+            df[[x, y, z]].values.tolist(),
+            itemstyle_opts=opts.ItemStyleOpts(opacity=0.8),
+        )
+
+    global_opts: dict[str, Any] = {
+        "title_opts": opts.TitleOpts(title=title) if title else opts.TitleOpts()
+    }
+    if color is None:
+        minimum, maximum = _visualmap_bounds(df[z])
+        global_opts["visualmap_opts"] = opts.VisualMapOpts(
+            min_=minimum, max_=maximum
+        )
+    chart.set_global_opts(**global_opts)
+    return chart
+
+
+def line_3d(
+    data: Any,
+    x: str,
+    y: str,
+    z: str,
+    color: str | None = None,
+    *,
+    title: str | None = None,
+    width: str | None = None,
+    height: str | None = None,
+    theme: str | None = None,
+) -> Line3D:
+    """3D line plot (plotly ``px.line_3d``)."""
+    df = normalize_data(data)
+    _validate_3d_columns(df, x, y, z, color)
+    init_opts, _ = _common(title, width, height, theme)
+    chart = Line3D(init_opts=init_opts)
+
+    if color is not None:
+        for name, group in df.groupby(color, sort=False):
+            chart.add(str(name), group[[x, y, z]].values.tolist())
+    else:
+        chart.add("", df[[x, y, z]].values.tolist())
+
+    chart.set_global_opts(
+        title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
+    )
+    return chart
+
+
+def bar_3d(
+    data: Any,
+    x: str,
+    y: str,
+    z: str,
+    color: str | None = None,
+    *,
+    title: str | None = None,
+    width: str | None = None,
+    height: str | None = None,
+    theme: str | None = None,
+) -> Bar3D:
+    """3D bar chart (plotly ``px.bar`` with 3D semantics via ECharts Bar3D)."""
+    df = normalize_data(data)
+    _validate_3d_columns(df, x, y, z, color)
+    init_opts, _ = _common(title, width, height, theme)
+    chart = Bar3D(init_opts=init_opts)
+
+    if color is not None:
+        for name, group in df.groupby(color, sort=False):
+            chart.add(str(name), group[[x, y, z]].values.tolist(), shading="lambert")
+    else:
+        chart.add("", df[[x, y, z]].values.tolist(), shading="lambert")
+
+    global_opts: dict[str, Any] = {
+        "title_opts": opts.TitleOpts(title=title) if title else opts.TitleOpts()
+    }
+    if color is None:
+        minimum, maximum = _visualmap_bounds(df[z])
+        global_opts["visualmap_opts"] = opts.VisualMapOpts(
+            min_=minimum, max_=maximum
+        )
+    chart.set_global_opts(**global_opts)
+    return chart
+
+
+def scatter_ternary(
+    data: Any,
+    a: str,
+    b: str,
+    c: str,
+    color: str | None = None,
+    *,
+    title: str | None = None,
+    width: str | None = None,
+    height: str | None = None,
+    theme: str | None = None,
+) -> Scatter:
+    """Raise because ECharts has no ternary coordinate system."""
+    raise NotImplementedError(
+        "ECharts and pyecharts have no ternary coordinate system. "
+        "Use plotly-express directly for ternary charts."
+    )

@@ -5,10 +5,7 @@ import tempfile
 
 import numpy as np
 import pandas as pd
-import pytest
-
 import pyecharts_express as px
-from pyecharts.charts.chart import Chart
 
 
 def _render(chart):
@@ -112,10 +109,6 @@ def test_radar_labels_and_color():
     chart = px.radar(df, labels={"speed": "SPD", "power": "PWR"},
                      color_discrete_sequence=["#abcdef"])
     _render(chart)
-    # indicator names renamed
-    names = [ind["name"] for ind in chart.options["series"][0].get("indicator", [])]
-    # radar stores indicators in schema, not series; check schema
-    schema = chart.options["series"][0]["data"] if "data" in chart.options["series"][0] else []
     assert chart.options["series"][0]["name"] == "row 0"
 
 
