@@ -25,6 +25,7 @@ from .charts import (
 )
 from .charts_extra import (
     area,
+    bar_3d,
     bar_polar,
     box,
     calendar_heatmap,
@@ -34,15 +35,18 @@ from .charts_extra import (
     graph,
     gauge,
     icicle,
+    line_3d,
     line_geo,
     line_polar,
     map_choropleth,
     parallel_categories,
     parallel_coordinates,
     sankey,
+    scatter_3d,
     scatter_geo,
     scatter_matrix,
     scatter_polar,
+    scatter_ternary,
     strip,
     sunburst,
     themeriver,
@@ -89,4 +93,9 @@ __all__ = [
     "themeriver",
     "calendar_heatmap",
     "wordcloud",
+    # ECharts GL / ternary compatibility
+    "scatter_3d",
+    "line_3d",
+    "bar_3d",
+    "scatter_ternary",
 ]

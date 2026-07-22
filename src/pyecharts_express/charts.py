@@ -7,7 +7,7 @@ the standard pyecharts API afterwards (``.render()``, ``.render_notebook()``,
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd

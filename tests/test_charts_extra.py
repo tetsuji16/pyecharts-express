@@ -8,9 +8,6 @@ import pandas as pd
 import pytest
 
 import pyecharts_express as px
-from pyecharts.charts.chart import Chart
-
-
 def _assert_renders(chart):
     # Grid / Page are composite charts, not subclasses of Chart
     with tempfile.TemporaryDirectory() as d:
@@ -146,6 +143,38 @@ def test_calendar_heatmap():
 def test_wordcloud():
     df = pd.DataFrame({"word": ["a", "b", "c"], "count": [10, 20, 30]})
     _assert_renders(px.wordcloud(df, words="word", values="count"))
+
+
+@pytest.mark.parametrize("chart_fn", [px.scatter_3d, px.line_3d, px.bar_3d])
+def test_3d_charts_render_with_echarts_gl(chart_fn):
+    df = pd.DataFrame(
+        {"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9], "group": ["a", "a", "b"]}
+    )
+    chart = chart_fn(df, x="x", y="y", z="z", color="group")
+    assert "echarts-gl" in chart.js_dependencies.items
+    assert [series["name"] for series in chart.options["series"]] == ["a", "b"]
+    _assert_renders(chart)
+
+
+@pytest.mark.parametrize("chart_fn", [px.scatter_3d, px.line_3d, px.bar_3d])
+def test_3d_charts_reject_missing_color_column(chart_fn):
+    df = pd.DataFrame({"x": [1], "y": [2], "z": [3]})
+    with pytest.raises(KeyError, match="missing"):
+        chart_fn(df, x="x", y="y", z="z", color="missing")
+
+
+@pytest.mark.parametrize("chart_fn", [px.scatter_3d, px.bar_3d])
+def test_3d_visualmap_has_non_degenerate_bounds(chart_fn):
+    df = pd.DataFrame({"x": [1, 2], "y": [3, 4], "z": [-5, -5]})
+    chart = chart_fn(df, x="x", y="y", z="z")
+    visualmap = chart.options["visualMap"].opts
+    assert visualmap["min"] == -5
+    assert visualmap["max"] == -4
+
+
+def test_scatter_ternary_is_explicitly_unsupported():
+    with pytest.raises(NotImplementedError, match="no ternary coordinate system"):
+        px.scatter_ternary([], a="a", b="b", c="c")
 
 
 def test_not_implemented_raise():

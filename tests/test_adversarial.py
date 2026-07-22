@@ -8,9 +8,10 @@ These pin down bugs found during adversarial review:
 """
 
 import datetime
+import os
+import tempfile
 
 import pandas as pd
-import pytest
 
 import pyecharts_express as px
 from pyecharts.charts.chart import Chart
@@ -20,8 +21,6 @@ from pyecharts_express.core import build_hierarchy
 
 def _render(chart):
     assert isinstance(chart, Chart)
-    import tempfile, os
-
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "o.html")
         chart.render(p)
