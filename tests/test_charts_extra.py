@@ -47,6 +47,51 @@ def test_box_alias():
     _assert_renders(px.box(_hier_df(), x="region", y="val"))
 
 
+def test_strip_uses_native_echarts_axis_jitter():
+    chart = px.strip(
+        _hier_df(),
+        x="region",
+        y="val",
+        color="pref",
+        jitter=24,
+        jitter_overlap=False,
+    )
+    assert chart.options["xAxis"][0]["jitter"] == 24
+    assert chart.options["xAxis"][0]["jitterOverlap"] is False
+    assert all(series["type"] == "scatter" for series in chart.options["series"])
+    assert all("renderItem" not in series for series in chart.options["series"])
+    _assert_renders(chart)
+
+
+def test_strip_horizontal_jitters_category_y_axis():
+    chart = px.strip(_hier_df(), x="val", y="region", orientation="h")
+    assert chart.options["yAxis"][0]["type"] == "category"
+    assert chart.options["yAxis"][0]["jitter"] == 20
+    assert chart.options["yAxis"][0]["data"] == ["Kanto", "Kansai"]
+    assert chart.options["series"][0]["data"][0] == (100, "Kanto")
+    _assert_renders(chart)
+
+
+def test_imshow_uses_native_heatmap_and_visualmap():
+    frame = pd.DataFrame([[1, 2], [3, 4]], index=["a", "b"], columns=["u", "v"])
+    chart = px.imshow(
+        frame,
+        origin="upper",
+        color_continuous_scale=["#000000", "#ffffff"],
+        text_auto=True,
+    )
+    assert chart.options["series"][0]["type"] == "heatmap"
+    assert chart.options["yAxis"][0]["inverse"] is True
+    assert chart.options["visualMap"].opts["min"] == 1
+    assert chart.options["visualMap"].opts["max"] == 4
+    assert chart.options["visualMap"].opts["inRange"]["color"] == [
+        "#000000",
+        "#ffffff",
+    ]
+    assert "renderItem" not in chart.options["series"][0]
+    _assert_renders(chart)
+
+
 def test_sunburst_path():
     _assert_renders(px.sunburst(_hier_df(), path=["region", "pref", "city"], values="val"))
 
@@ -180,7 +225,5 @@ def test_scatter_ternary_is_explicitly_unsupported():
 def test_not_implemented_raise():
     with pytest.raises(NotImplementedError):
         px.violin()
-    with pytest.raises(NotImplementedError):
-        px.strip()
     with pytest.raises(NotImplementedError):
         px.density_contour()

@@ -20,10 +20,10 @@ available afterwards.
 - 📊 **plotly-express style signatures** — `bar(df, x="city", y="pop", color="region")`
 - 🐼 **pandas-friendly** — accepts `DataFrame` / `list[dict]` / `dict`
 - 🎨 **pyecharts-compatible** — returns a raw `Chart`, freely customizable
-- 🧩 **covers the plotly-express chart surface** (unsupported ones raise a clear `NotImplementedError`)
+- 🧩 **covers the plotly-express chart surface** using native ECharts series/options
 - 🪶 **lightweight** — a thin wrapper layer; the full power of pyecharts is reachable
 - 🎛️ **plotly-express compatible options** — `color_discrete_sequence` / `color_discrete_map`, `log_x` / `log_y`, `range_x` / `range_y`, `labels`, `opacity`, `orientation`, `symbol`
-- 🧪 **tested** — `pytest` covers every chart type and the new options (84 tests)
+- 🧪 **tested** — `pytest` covers every chart type and the new options (87 tests)
 
 ---
 
@@ -59,7 +59,9 @@ chart.render("bar.html")
 ## Chart reference
 
 pyecharts-express mirrors the major plotly-express functions. Functions with
-no pyecharts equivalent raise `NotImplementedError` with guidance.
+no pyecharts class are mapped directly to native ECharts APIs when ECharts
+itself supports them. Features that would require a `custom` series remain
+unsupported.
 
 ### Basic
 | Function | Description | Key args |
@@ -84,10 +86,15 @@ no pyecharts equivalent raise `NotImplementedError` with guidance.
 |----------|-------------|----------|
 | `px.histogram` | Histogram | `x`, `bins`, `density` |
 | `px.box` / `px.boxplot` | Box plot | `x`, `y` |
-| `px.violin` | ❌ unsupported (no pyecharts equivalent) | — |
-| `px.strip` | ❌ unsupported | — |
+| `px.violin` | ❌ unsupported (requires custom rendering) | — |
+| `px.strip` | Strip plot (ECharts 6 native jitter) | `x`, `y`, `color`, `jitter` |
 | `px.density_heatmap` | 2D histogram | `x`, `y`, `bins` |
-| `px.density_contour` | ❌ unsupported (no pyecharts equivalent) | — |
+| `px.density_contour` | ❌ unsupported (requires custom rendering) | — |
+
+### Matrix
+| Function | Description | Key args |
+|----------|-------------|----------|
+| `px.imshow` | Scalar matrix via ECharts heatmap | `x`, `y`, `zmin`, `zmax`, `origin` |
 
 ### Polar
 | Function | Description | Key args |

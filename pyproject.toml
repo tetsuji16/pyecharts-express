@@ -1,6 +1,6 @@
 [project]
 name = "pyecharts-express"
-version = "1.0.3"
+version = "1.0.4"
 description = "A plotly-express style API for pyecharts — build ECharts with concise, dataframe-friendly calls."
 readme = "README.md"
 authors = [

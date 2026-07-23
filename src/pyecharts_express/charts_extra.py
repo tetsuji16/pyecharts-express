@@ -1,14 +1,17 @@
 """Additional chart builders covering the full plotly-express surface.
 
-These map plotly-express function names onto the equivalent pyecharts chart
-types. Functions that have no pyecharts equivalent (violin, strip,
-density_contour, ternary) raise ``NotImplementedError`` with guidance.
+These map plotly-express function names onto native ECharts series and
+coordinate-system options. A pyecharts chart class is used when one exists;
+newer ECharts options such as axis jitter are configured through pyecharts'
+generic option objects. Features that require an ECharts ``custom`` series
+(violin, density contour, ternary) deliberately remain unsupported.
 """
 
 from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
+import numpy as np
 import pandas as pd
 from pyecharts import options as opts
 from pyecharts.charts import (
@@ -20,6 +23,7 @@ from pyecharts.charts import (
     Geo,
     Graph,
     Grid,
+    HeatMap,
     Line,
     Line3D,
     Map,
@@ -165,18 +169,266 @@ def violin(*args, **kwargs):
     )
 
 
-def strip(*args, **kwargs):
-    """Not supported — pyecharts has no strip plot equivalent."""
-    raise NotImplementedError(
-        "pyecharts has no strip plot. Consider `px.box()` or `px.scatter()`."
+def strip(
+    data: Any,
+    x: str | None = None,
+    y: str | None = None,
+    color: str | None = None,
+    *,
+    orientation: str | None = None,
+    stripmode: str = "group",
+    jitter: float = 20,
+    jitter_overlap: bool = False,
+    jitter_margin: float | None = None,
+    symbol: str = "circle",
+    symbol_size: float = 10,
+    title: str | None = None,
+    width: str | None = None,
+    height: str | None = None,
+    theme: str | None = None,
+    xaxis_name: str | None = None,
+    yaxis_name: str | None = None,
+    log_x: bool = False,
+    log_y: bool = False,
+    range_x: tuple[Any, Any] | None = None,
+    range_y: tuple[Any, Any] | None = None,
+    labels: Mapping[str, str] | None = None,
+    category_orders: Mapping[str, Sequence[Any]] | None = None,
+    opacity: float | None = None,
+    color_discrete_sequence: Sequence[str] | None = None,
+    color_discrete_map: Mapping[str, str] | None = None,
+) -> Scatter:
+    """Create a strip plot using ECharts 6 native axis jitter.
+
+    No point offsets are calculated by this wrapper. Marks are ordinary
+    ECharts ``scatter`` data and ECharts performs the jitter layout from the
+    category axis' ``jitter``, ``jitterOverlap`` and ``jitterMargin`` options.
+    ``stripmode`` is accepted for Plotly Express compatibility; ECharts keeps
+    color groups as separate series and applies its native collision layout
+    for both modes.
+    """
+    if orientation not in (None, "v", "h"):
+        raise ValueError("`orientation` must be 'v', 'h', or None.")
+    if stripmode not in ("group", "overlay"):
+        raise ValueError("`stripmode` must be 'group' or 'overlay'.")
+    if jitter < 0:
+        raise ValueError("`jitter` must be non-negative.")
+    if symbol_size <= 0:
+        raise ValueError("`symbol_size` must be positive.")
+
+    df = normalize_data(data)
+    if x is None and y is None:
+        numeric = list(df.select_dtypes(include="number").columns)
+        if not numeric:
+            raise ValueError("At least one of `x` or `y` must be specified.")
+        y = str(numeric[0])
+    ensure_columns(df, *[name for name in (x, y, color) if name is not None])
+
+    if orientation is None:
+        if x is None:
+            orientation = "v"
+        elif y is None:
+            orientation = "h"
+        else:
+            x_numeric = pd.api.types.is_numeric_dtype(df[x])
+            y_numeric = pd.api.types.is_numeric_dtype(df[y])
+            orientation = "h" if x_numeric and not y_numeric else "v"
+
+    vertical = orientation == "v"
+    category_col = x if vertical else y
+    value_col = y if vertical else x
+    if value_col is None:
+        raise ValueError(
+            f"`{'y' if vertical else 'x'}` is required for orientation={orientation!r}."
+        )
+
+    label_map = labels or {}
+    xaxis_name = label_map.get(x or "", xaxis_name or x or "")
+    yaxis_name = label_map.get(y or "", yaxis_name or y or "")
+
+    if category_col is None:
+        categories: list[Any] = [""]
+    else:
+        configured = (category_orders or {}).get(category_col)
+        observed = list(dict.fromkeys(df[category_col].dropna().tolist()))
+        if configured is None:
+            categories = observed
+        else:
+            configured_list = list(configured)
+            categories = configured_list + [
+                value for value in observed if value not in configured_list
+            ]
+
+    init_opts, _ = _common(title, width, height, theme)
+    chart = Scatter(init_opts=init_opts)
+    chart.add_xaxis(categories if vertical else [])
+
+    palette = list(color_discrete_sequence or [])
+
+    def resolve_color(name: str, index: int) -> str | None:
+        if color_discrete_map and name in color_discrete_map:
+            return color_discrete_map[name]
+        if palette:
+            return palette[index % len(palette)]
+        return None
+
+    groups = (
+        [
+            (str(name), group)
+            for name, group in df[df[color].notna()].groupby(color, sort=False)
+        ]
+        if color is not None
+        else [(str(value_col), df)]
     )
+    for index, (name, group) in enumerate(groups):
+        category_values = (
+            group[category_col].tolist()
+            if category_col is not None
+            else [""] * len(group)
+        )
+        numeric_values = pd.to_numeric(group[value_col], errors="coerce").tolist()
+        points = (
+            list(zip(category_values, numeric_values))
+            if vertical
+            else list(zip(numeric_values, category_values))
+        )
+        color_value = resolve_color(name, index)
+        itemstyle = opts.ItemStyleOpts(color=color_value, opacity=opacity)
+        chart.add_yaxis(
+            name,
+            points,
+            symbol=symbol,
+            symbol_size=symbol_size,
+            itemstyle_opts=itemstyle if (color_value or opacity is not None) else None,
+            label_opts=opts.LabelOpts(is_show=False),
+        )
+
+    xaxis_opts = opts.AxisOpts(
+        type_="log" if log_x else ("category" if vertical else "value"),
+        name=xaxis_name,
+        min_=range_x[0] if range_x else None,
+        max_=range_x[1] if range_x else None,
+        jitter=jitter if vertical else None,
+        is_jitter_overlap=jitter_overlap if vertical else None,
+        jitter_margin=jitter_margin if vertical else None,
+    )
+    yaxis_opts = opts.AxisOpts(
+        type_="log" if log_y else ("value" if vertical else "category"),
+        name=yaxis_name,
+        min_=range_y[0] if range_y else None,
+        max_=range_y[1] if range_y else None,
+        jitter=jitter if not vertical else None,
+        is_jitter_overlap=jitter_overlap if not vertical else None,
+        jitter_margin=jitter_margin if not vertical else None,
+    )
+    if not vertical:
+        yaxis_opts.opts["data"] = categories
+    chart.set_global_opts(
+        title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
+        xaxis_opts=xaxis_opts,
+        yaxis_opts=yaxis_opts,
+        tooltip_opts=opts.TooltipOpts(trigger="item"),
+    )
+    return chart
 
 
 def density_contour(*args, **kwargs):
-    """Not supported — pyecharts has no 2D contour plot equivalent."""
+    """Unsupported without a custom renderer: ECharts has no contour series."""
     raise NotImplementedError(
-        "pyecharts has no 2D density contour. Use `px.density_heatmap()` instead."
+        "ECharts has no native 2D contour series. A custom series would violate "
+        "this package's native-ECharts-only policy; use `px.density_heatmap()`."
     )
+
+
+def imshow(
+    img: Any,
+    *,
+    x: Sequence[Any] | None = None,
+    y: Sequence[Any] | None = None,
+    zmin: float | None = None,
+    zmax: float | None = None,
+    origin: str = "upper",
+    color_continuous_scale: Sequence[str] | None = None,
+    title: str | None = None,
+    width: str | None = None,
+    height: str | None = None,
+    theme: str | None = None,
+    labels: Mapping[str, str] | None = None,
+    text_auto: bool = False,
+) -> HeatMap:
+    """Display a two-dimensional scalar matrix as an ECharts heatmap.
+
+    This is a direct wrapper over ECharts ``heatmap`` series and
+    ``visualMap``. RGB/RGBA image rasterization is intentionally not emulated
+    because ECharts does not expose it as a heatmap-series API.
+    """
+    if origin not in ("upper", "lower"):
+        raise ValueError("`origin` must be 'upper' or 'lower'.")
+
+    if isinstance(img, pd.DataFrame):
+        matrix = img.to_numpy()
+        x_values = list(img.columns) if x is None else list(x)
+        y_values = list(img.index) if y is None else list(y)
+    else:
+        matrix = np.asarray(img)
+        if matrix.ndim != 2:
+            raise ValueError("`img` must be a two-dimensional scalar matrix.")
+        x_values = list(range(matrix.shape[1])) if x is None else list(x)
+        y_values = list(range(matrix.shape[0])) if y is None else list(y)
+
+    if matrix.ndim != 2:
+        raise ValueError("`img` must be a two-dimensional scalar matrix.")
+    if len(x_values) != matrix.shape[1] or len(y_values) != matrix.shape[0]:
+        raise ValueError("`x` and `y` lengths must match the matrix dimensions.")
+
+    numeric = np.asarray(matrix, dtype=float)
+    finite = numeric[np.isfinite(numeric)]
+    if finite.size == 0:
+        raise ValueError("`img` must contain at least one finite numeric value.")
+    visual_min = float(finite.min()) if zmin is None else float(zmin)
+    visual_max = float(finite.max()) if zmax is None else float(zmax)
+    if visual_min == visual_max:
+        visual_max = visual_min + 1.0
+
+    values = [
+        [
+            column,
+            row,
+            None
+            if not np.isfinite(numeric[row, column])
+            else float(numeric[row, column]),
+        ]
+        for row in range(matrix.shape[0])
+        for column in range(matrix.shape[1])
+    ]
+    init_opts, _ = _common(title, width, height, theme)
+    chart = HeatMap(init_opts=init_opts)
+    chart.add_xaxis(x_values)
+    chart.add_yaxis(
+        "",
+        y_values,
+        values,
+        label_opts=opts.LabelOpts(is_show=text_auto, position="inside"),
+    )
+    label_map = labels or {}
+    chart.set_global_opts(
+        title_opts=opts.TitleOpts(title=title) if title else opts.TitleOpts(),
+        xaxis_opts=opts.AxisOpts(type_="category", name=label_map.get("x", "")),
+        yaxis_opts=opts.AxisOpts(
+            type_="category",
+            name=label_map.get("y", ""),
+            is_inverse=origin == "upper",
+        ),
+        visualmap_opts=opts.VisualMapOpts(
+            min_=visual_min,
+            max_=visual_max,
+            range_color=(
+                list(color_continuous_scale) if color_continuous_scale else None
+            ),
+        ),
+        tooltip_opts=opts.TooltipOpts(trigger="item"),
+    )
+    return chart
 
 
 def sunburst(
